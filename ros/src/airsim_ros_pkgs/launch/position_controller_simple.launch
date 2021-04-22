@@ -2,6 +2,14 @@
 <!-- global params -->
 <!-- PID position controller node -->
     <node name="pid_position_node" pkg="airsim_ros_pkgs" type="pd_position_controller_simple_node" output="screen">
+
+        <remap from="/airsim_node/odom_local_ned" to="/airsim_node/drone_1/odom_local_ned"/>
+
+        <remap from="/airsim_node/home_geo_point" to="/airsim_node/origin_geo_point"/>
+        <remap from="/vel_cmd_world_frame" to="/airsim_node/drone_1/vel_cmd_world_frame"/>
+
+
+
         <param name="update_control_every_n_sec" type="double" value="0.01" /> <!-- this needs to be in sync with airsim_ros_wrapper? -->
         <param name="kp_x" type="double" value="0.30" />
         <param name="kp_y" type="double" value="0.30" />
