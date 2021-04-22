@@ -18,6 +18,21 @@ set(RPC_LIB_INCLUDES " ${AIRSIM_ROOT}/external/rpclib/rpclib-2.2.1/include")
 set(RPC_LIB rpc) # name of .a file with lib prefix
 message(STATUS "found RPC_LIB_INCLUDES=${RPC_LIB_INCLUDES}")
 
+
+add_definitions(-std=c++11)
+
+# Link against system catkin yaml-cpp if installed.^M
+find_package(PkgConfig)
+find_package(yaml_cpp_catkin QUIET)
+if(${yaml_cpp_catkin_FOUND})
+    message(STATUS "Found yaml_cpp_catkin, using instead of system library.")
+    set(YamlCpp_LIBRARIES ${yaml_cpp_catkin_LIBRARIES})
+    set(YamlCpp_INCLUDE_DIRS ${yaml_cpp_catkin_INCLUDE_DIRS})
+else()
+    message(STATUS "No yaml_cpp_catkin, using yaml-cpp system library instead.")
+    pkg_check_modules(YamlCpp REQUIRED yaml-cpp>=0.5)
+endif()
+
 # todo eigen3 in AirLib already
 # find_package(Eigen3 REQUIRED) 
 find_package(Boost REQUIRED)
@@ -101,7 +116,7 @@ add_dependencies(pd_position_controller_simple ${catkin_EXPORTED_TARGETS})
 
 add_library(airsim_ros src/airsim_ros_wrapper.cpp)
 add_dependencies(airsim_ros ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(airsim_ros ${catkin_LIBRARIES} ${OpenCV_LIBS} yaml-cpp AirLib airsim_settings_parser)
+target_link_libraries(airsim_ros  ${YamlCpp_LIBRARIES}  ${catkin_LIBRARIES} ${OpenCV_LIBS} yaml-cpp AirLib airsim_settings_parser)
 
 add_executable(airsim_node src/airsim_node.cpp)
 target_link_libraries(airsim_node airsim_ros ${catkin_LIBRARIES} AirLib)
