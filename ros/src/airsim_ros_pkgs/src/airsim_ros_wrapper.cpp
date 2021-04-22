@@ -2,6 +2,7 @@
 #include <boost/make_shared.hpp>
 // #include <pluginlib/class_list_macros.h>
 // PLUGINLIB_EXPORT_CLASS(AirsimROSWrapper, nodelet::Nodelet)
+#include <std_msgs/Bool.h>
 #include "common/AirSimSettings.hpp"
 #include <tf2_sensor_msgs/tf2_sensor_msgs.h>
 
@@ -158,6 +159,8 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json()
         vehicle_ros->env_pub = nh_private_.advertise<airsim_ros_pkgs::Environment>(curr_vehicle_name + "/environment", 10);
 
         vehicle_ros->global_gps_pub = nh_private_.advertise<sensor_msgs::NavSatFix>(curr_vehicle_name + "/global_gps", 10);
+
+        vehicle_ros->collision_pub =   nh_.advertise<std_msgs::Bool>(curr_vehicle_name + "/collision", 1);
 
         if (airsim_mode_ == AIRSIM_MODE::DRONE)
         {
@@ -1094,6 +1097,12 @@ void AirsimROSWrapper::publish_vehicle_state()
         // odom and transforms
         vehicle_ros->odom_local_pub.publish(vehicle_ros->curr_odom);
         publish_odom_tf(vehicle_ros->curr_odom);
+
+        if(airsim_client_->simGetCollisionInfo(vehicle_ros->vehicle_name).has_collided) {
+            std_msgs::Bool msg;
+            msg.data = true;
+            vehicle_ros -> collision_pub.publish(msg);
+        }
 
         // ground truth GPS position from sim/HITL
         vehicle_ros->global_gps_pub.publish(vehicle_ros->gps_sensor_msg);
