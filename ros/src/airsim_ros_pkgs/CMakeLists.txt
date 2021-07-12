@@ -56,6 +56,7 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_ros
   tf2_sensor_msgs
   tf2_geometry_msgs
+        image_geometry
 )
 
 add_message_files(

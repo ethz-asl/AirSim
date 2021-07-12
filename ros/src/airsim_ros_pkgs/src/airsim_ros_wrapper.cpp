@@ -16,6 +16,8 @@ constexpr char AirsimROSWrapper::R_YML_NAME[];
 constexpr char AirsimROSWrapper::P_YML_NAME[];
 constexpr char AirsimROSWrapper::DMODEL_YML_NAME[];
 
+namespace enc = sensor_msgs::image_encodings;
+
 const std::unordered_map<int, std::string> AirsimROSWrapper::image_type_int_to_string_map_ = {
         {0, "Scene"},
         {1, "DepthPlanner"},
@@ -100,9 +102,10 @@ void AirsimROSWrapper::initialize_ros() {
     // todo enforce dynamics constraints in this node as well?
     // nh_.getParam("max_vert_vel_", max_vert_vel_);
     // nh_.getParam("max_horz_vel", max_horz_vel_)
+    std::cout << "publish clock " << publish_clock_ << std::endl;
 
     create_ros_pubs_from_settings_json();
-    airsim_control_update_timer_ = nh_private_.createTimer(ros::Duration(update_airsim_control_every_n_sec),
+    airsim_control_update_timer_ = nh_private_.createWallTimer(ros::WallDuration(update_airsim_control_every_n_sec),
                                                            &AirsimROSWrapper::drone_state_timer_cb, this);
 }
 
@@ -230,6 +233,7 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json() {
 
         }
 
+        pc_publisher_ = nh_private_.advertise<sensor_msgs::PointCloud2>(curr_vehicle_name + "/points", 10);
         // iterate over sensors
         std::vector <SensorPublisher> sensors;
         for (auto &curr_sensor_map : vehicle_setting->sensors) {
@@ -332,7 +336,7 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json() {
     reset_srvr_ = nh_private_.advertiseService("reset", &AirsimROSWrapper::reset_srv_cb, this);
 
     if (publish_clock_) {
-        clock_pub_ = nh_private_.advertise<rosgraph_msgs::Clock>("clock", 1);
+        clock_pub_ = nh_private_.advertise<rosgraph_msgs::Clock>("/clock", 1);
     }
 
     // if >0 cameras, add one more thread for img_request_timer_cb
@@ -362,7 +366,7 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json() {
     initialize_airsim();
 }
 
-// todo: error check. if state is not landed, return error. 
+// todo: error check. if state is not landed, return error.
 bool AirsimROSWrapper::takeoff_srv_cb(airsim_ros_pkgs::Takeoff::Request &request,
                                       airsim_ros_pkgs::Takeoff::Response &response, const std::string &vehicle_name) {
     std::lock_guard <std::mutex> guard(drone_control_mutex_);
@@ -370,7 +374,7 @@ bool AirsimROSWrapper::takeoff_srv_cb(airsim_ros_pkgs::Takeoff::Request &request
     if (request.waitOnLastTask)
         static_cast<msr::airlib::MultirotorRpcLibClient *>(airsim_client_.get())->takeoffAsync(20,
                                                                                                vehicle_name)->waitOnLastTask(); // todo value for timeout_sec?
-        // response.success = 
+        // response.success =
     else
         static_cast<msr::airlib::MultirotorRpcLibClient *>(airsim_client_.get())->takeoffAsync(20, vehicle_name);
     // response.success =
@@ -386,7 +390,7 @@ bool AirsimROSWrapper::takeoff_group_srv_cb(airsim_ros_pkgs::TakeoffGroup::Reque
         for (const auto &vehicle_name : request.vehicle_names)
             static_cast<msr::airlib::MultirotorRpcLibClient *>(airsim_client_.get())->takeoffAsync(20,
                                                                                                    vehicle_name)->waitOnLastTask(); // todo value for timeout_sec?
-        // response.success = 
+        // response.success =
     else
         for (const auto &vehicle_name : request.vehicle_names)
             static_cast<msr::airlib::MultirotorRpcLibClient *>(airsim_client_.get())->takeoffAsync(20, vehicle_name);
@@ -403,7 +407,7 @@ bool AirsimROSWrapper::takeoff_all_srv_cb(airsim_ros_pkgs::Takeoff::Request &req
         for (const auto &vehicle_name_ptr_pair : vehicle_name_ptr_map_)
             static_cast<msr::airlib::MultirotorRpcLibClient *>(airsim_client_.get())->takeoffAsync(20,
                                                                                                    vehicle_name_ptr_pair.first)->waitOnLastTask(); // todo value for timeout_sec?
-        // response.success = 
+        // response.success =
     else
         for (const auto &vehicle_name_ptr_pair : vehicle_name_ptr_map_)
             static_cast<msr::airlib::MultirotorRpcLibClient *>(airsim_client_.get())->takeoffAsync(20,
@@ -586,7 +590,7 @@ void AirsimROSWrapper::vel_cmd_world_frame_cb(const airsim_ros_pkgs::VelCmd::Con
     drone->has_vel_cmd = true;
 }
 
-// this is kinda unnecessary but maybe it makes life easier for the end user. 
+// this is kinda unnecessary but maybe it makes life easier for the end user.
 void AirsimROSWrapper::vel_cmd_group_world_frame_cb(const airsim_ros_pkgs::VelCmdGroup &msg) {
     std::lock_guard <std::mutex> guard(drone_control_mutex_);
 
@@ -639,7 +643,7 @@ void AirsimROSWrapper::gimbal_angle_quat_cmd_cb(const airsim_ros_pkgs::GimbalAng
 // todo support multiple gimbal commands
 // 1. find quaternion of default gimbal pose
 // 2. forward multiply with quaternion equivalent to desired euler commands (in degrees)
-// 3. call airsim client's setCameraPose which sets camera pose wrt world (or takeoff?) ned frame. todo 
+// 3. call airsim client's setCameraPose which sets camera pose wrt world (or takeoff?) ned frame. todo
 void
 AirsimROSWrapper::gimbal_angle_euler_cmd_cb(const airsim_ros_pkgs::GimbalAngleEulerCmd &gimbal_angle_euler_cmd_msg) {
     try {
@@ -844,8 +848,8 @@ sensor_msgs::NavSatFix AirsimROSWrapper::get_gps_msg_from_airsim(const msr::airl
     gps_msg.altitude = gps_data.gnss.geo_point.altitude;
     gps_msg.status.service = sensor_msgs::NavSatStatus::SERVICE_GLONASS;
     gps_msg.status.status = gps_data.gnss.fix_type;
-    // gps_msg.position_covariance_type = 
-    // gps_msg.position_covariance = 
+    // gps_msg.position_covariance_type =
+    // gps_msg.position_covariance =
 
     return gps_msg;
 }
@@ -886,7 +890,7 @@ sensor_msgs::Imu AirsimROSWrapper::get_imu_msg_from_airsim(const msr::airlib::Im
     imu_msg.angular_velocity.y = imu_data.angular_velocity.y();
     imu_msg.angular_velocity.z = imu_data.angular_velocity.z();
 
-    // meters/s2^m 
+    // meters/s2^m
     imu_msg.linear_acceleration.x = imu_data.linear_acceleration.x();
     imu_msg.linear_acceleration.y = imu_data.linear_acceleration.y();
     imu_msg.linear_acceleration.z = imu_data.linear_acceleration.z();
@@ -945,11 +949,10 @@ ros::Time AirsimROSWrapper::airsim_timestamp_to_ros(const msr::airlib::TTimePoin
     return cur_time;
 }
 
-void AirsimROSWrapper::drone_state_timer_cb(const ros::TimerEvent &event) {
+void AirsimROSWrapper::drone_state_timer_cb(const ros::WallTimerEvent &event) {
     try {
         // todo this is global origin
         origin_geo_point_pub_.publish(origin_geo_point_msg_);
-
         // get the basic vehicle pose and environmental state
         const auto now = update_state();
 
@@ -998,7 +1001,7 @@ ros::Time AirsimROSWrapper::update_state() {
     // iterate over drones
     for (auto &vehicle_name_ptr_pair : vehicle_name_ptr_map_) {
         ros::Time vehicle_time;
-        // get drone state from airsim 
+        // get drone state from airsim
         auto &vehicle_ros = vehicle_name_ptr_pair.second;
 
         // vehicle environment, we can get ambient temperature here and other truths
@@ -1047,8 +1050,7 @@ ros::Time AirsimROSWrapper::update_state() {
         env_msg.header.frame_id = vehicle_ros->vehicle_name;
         env_msg.header.stamp = vehicle_time;
         vehicle_ros->env_msg = env_msg;
-
-        // convert airsim drone state to ROS msgs            
+        // convert airsim drone state to ROS msgs
         vehicle_ros->curr_odom.header.frame_id = vehicle_ros->vehicle_name;
         vehicle_ros->curr_odom.child_frame_id = vehicle_ros->odom_frame_id;
         vehicle_ros->curr_odom.header.stamp = vehicle_time;
@@ -1161,7 +1163,7 @@ void AirsimROSWrapper::update_commands() {
         }
     }
 
-    // Only camera rotation, no translation movement of camera 
+    // Only camera rotation, no translation movement of camera
     if (has_gimbal_cmd_) {
         std::lock_guard <std::mutex> guard(drone_control_mutex_);
         airsim_client_->simSetCameraPose(gimbal_cmd_.camera_name, get_airlib_pose(0, 0, 0, gimbal_cmd_.target_quat),
@@ -1171,7 +1173,7 @@ void AirsimROSWrapper::update_commands() {
     has_gimbal_cmd_ = false;
 }
 
-// airsim uses nans for zeros in settings.json. we set them to zeros here for handling tfs in ROS 
+// airsim uses nans for zeros in settings.json. we set them to zeros here for handling tfs in ROS
 void AirsimROSWrapper::set_nans_to_zeros_in_pose(VehicleSetting &vehicle_setting) const {
     if (std::isnan(vehicle_setting.position.x()))
         vehicle_setting.position.x() = 0.0;
@@ -1239,7 +1241,7 @@ AirsimROSWrapper::set_nans_to_zeros_in_pose(const VehicleSetting &vehicle_settin
 void AirsimROSWrapper::append_static_vehicle_tf(VehicleROS *vehicle_ros, const VehicleSetting &vehicle_setting) {
     geometry_msgs::TransformStamped vehicle_tf_msg;
     vehicle_tf_msg.header.frame_id = world_frame_id_;
-    vehicle_tf_msg.header.stamp = ros::Time::now();
+    vehicle_tf_msg.header.stamp = vehicle_ros->stamp;// ros::Time::now();
     vehicle_tf_msg.child_frame_id = vehicle_ros->vehicle_name;
     vehicle_tf_msg.transform.translation.x = vehicle_setting.position.x();
     vehicle_tf_msg.transform.translation.y = vehicle_setting.position.y();
@@ -1334,11 +1336,13 @@ void AirsimROSWrapper::img_response_timer_cb(const ros::TimerEvent &event) {
     try {
         int image_response_idx = 0;
         for (const auto &airsim_img_request_vehicle_name_pair : airsim_img_request_vehicle_name_pair_vec_) {
+
+            ros::Time curr_ros_time = ros::Time::now();
             const std::vector <ImageResponse> &img_response = airsim_client_images_.simGetImages(
                     airsim_img_request_vehicle_name_pair.first, airsim_img_request_vehicle_name_pair.second);
 
             if (img_response.size() == airsim_img_request_vehicle_name_pair.first.size()) {
-                process_and_publish_img_response(img_response, image_response_idx,
+                process_and_publish_img_response(curr_ros_time, img_response, image_response_idx,
                                                  airsim_img_request_vehicle_name_pair.second);
                 image_response_idx += img_response.size();
             }
@@ -1403,7 +1407,7 @@ sensor_msgs::ImagePtr AirsimROSWrapper::get_img_msg_from_response(const ImageRes
 sensor_msgs::ImagePtr AirsimROSWrapper::get_depth_img_msg_from_response(const ImageResponse &img_response,
                                                                         const ros::Time curr_ros_time,
                                                                         const std::string frame_id) {
-    // todo using img_response.image_data_float direclty as done get_img_msg_from_response() throws an error, 
+    // todo using img_response.image_data_float direclty as done get_img_msg_from_response() throws an error,
     // hence the dependency on opencv and cv_bridge. however, this is an extremely fast op, so no big deal.
     cv::Mat depth_img = manual_decode_depth(img_response);
     sensor_msgs::ImagePtr depth_img_msg = cv_bridge::CvImage(std_msgs::Header(), "32FC1", depth_img).toImageMsg();
@@ -1433,54 +1437,138 @@ sensor_msgs::CameraInfo AirsimROSWrapper::generate_cam_info(const std::string &c
     return cam_info_msg;
 }
 
-void AirsimROSWrapper::process_and_publish_img_response(const std::vector <ImageResponse> &img_response_vec,
+void AirsimROSWrapper::process_and_publish_img_response(const ros::Time curr_ros_time, const std::vector <ImageResponse> &img_response_vec,
                                                         const int img_response_idx, const std::string &vehicle_name) {
     // todo add option to use airsim time (image_response.TTimePoint) like Gazebo /use_sim_time param
-    ros::Time curr_ros_time = ros::Time::now();
     int img_response_idx_internal = img_response_idx;
     std::vector <std::string> published_cam_frames;
 
+    sensor_msgs::ImagePtr depth_msg;
+    sensor_msgs::ImagePtr rgb_msg_in;
+    sensor_msgs::CameraInfoPtr info_msg;
+    std::string search = "Scene";
+
     for (const auto &curr_img_response : img_response_vec) {
-        // todo publishing a tf for each capture type seems stupid. but it foolproofs us against render thread's async stuff, I hope. 
+        // todo publishing a tf for each capture type seems stupid. but it foolproofs us against render thread's async stuff, I hope.
         // Ideally, we should loop over cameras and then captures, and publish only one tf.
         std::string frame_to_publish = vehicle_name + curr_img_response.camera_name;
-        // Only publish frame once to not have duplicated tf messages messing with ROS noetic
-        if (std::find(published_cam_frames.begin(), published_cam_frames.end(), frame_to_publish) ==
-            published_cam_frames.end()) {
-            publish_camera_tf(curr_img_response, curr_ros_time, vehicle_name, curr_img_response.camera_name);
-            published_cam_frames.push_back(frame_to_publish);
-        }
+        ros::Time ros_time_from_airsim = airsim_timestamp_to_ros(curr_img_response.time_stamp);
+
+//        // Only publish frame once to not have duplicated tf messages messing with ROS noetic
+//        if (std::find(published_cam_frames.begin(), published_cam_frames.end(), frame_to_publish) ==
+//            published_cam_frames.end()) {
+//            published_cam_frames.push_back(frame_to_publish);
+//        }
+
+
+        publish_camera_tf(curr_img_response, ros_time_from_airsim, vehicle_name, curr_img_response.camera_name);
 
         // todo simGetCameraInfo is wrong + also it's only for image type -1.
         // msr::airlib::CameraInfo camera_info = airsim_client_.simGetCameraInfo(curr_img_response.camera_name);
 
+
         // update timestamp of saved cam info msgs
-        camera_info_msg_vec_[img_response_idx_internal].header.stamp = curr_ros_time;
+        camera_info_msg_vec_[img_response_idx_internal].header.stamp = ros_time_from_airsim;
         cam_info_pub_vec_[img_response_idx_internal].publish(camera_info_msg_vec_[img_response_idx_internal]);
 
         // DepthPlanner / DepthPerspective / DepthVis / DisparityNormalized
         if (curr_img_response.pixels_as_float) {
-            image_pub_vec_[img_response_idx_internal].publish(get_depth_img_msg_from_response(curr_img_response,
-                                                                                              curr_ros_time,
-                                                                                              curr_img_response.camera_name +
-                                                                                              "_optical"));
+
+            depth_msg = get_depth_img_msg_from_response(curr_img_response,
+                                                        ros_time_from_airsim,
+                                                                            curr_img_response.camera_name +
+                                                                            "_optical");
+            image_pub_vec_[img_response_idx_internal].publish(depth_msg);
+
+            sensor_msgs::CameraInfo info = camera_info_msg_vec_[img_response_idx_internal];
+            info_msg = boost::make_shared<sensor_msgs::CameraInfo>(info);
+
         }
             // Scene / Segmentation / SurfaceNormals / Infrared
         else {
-            image_pub_vec_[img_response_idx_internal].publish(get_img_msg_from_response(curr_img_response,
-                                                                                        curr_ros_time,
-                                                                                        curr_img_response.camera_name +
-                                                                                        "_optical"));
+            sensor_msgs::ImagePtr rgb_msg = get_img_msg_from_response(curr_img_response,
+                                                                      ros_time_from_airsim,
+                                                  curr_img_response.camera_name +
+                                                  "_optical");
+            image_pub_vec_[img_response_idx_internal].publish(rgb_msg);
+
+            if (camera_info_msg_vec_[img_response_idx_internal].header.frame_id.find(search) != std::string::npos) {
+                rgb_msg_in = rgb_msg;
+            }
         }
         img_response_idx_internal++;
     }
+
+    publish_images_as_pc(depth_msg, rgb_msg_in, info_msg);
+}
+
+void AirsimROSWrapper::publish_images_as_pc(const sensor_msgs::ImagePtr& depth_msg,
+                                              const sensor_msgs::ImagePtr& rgb_msg_in,
+                                              const sensor_msgs::CameraInfoPtr& info_msg) {
+
+    image_geometry::PinholeCameraModel model_;
+    // Update camera model
+    model_.fromCameraInfo(info_msg);
+
+    // Check if the input image has to be resized
+    sensor_msgs::ImageConstPtr rgb_msg = rgb_msg_in;
+
+    rgb_msg = rgb_msg_in;
+
+    // Supported color encodings: RGB8, BGR8, MONO8
+    int red_offset, green_offset, blue_offset, color_step;
+    if (rgb_msg->encoding == enc::RGB8) {
+        red_offset = 0;
+        green_offset = 1;
+        blue_offset = 2;
+        color_step = 3;
+    } else if (rgb_msg->encoding == enc::BGR8) {
+        red_offset = 2;
+        green_offset = 1;
+        blue_offset = 0;
+        color_step = 3;
+    } else if (rgb_msg->encoding == enc::MONO8) {
+        red_offset = 0;
+        green_offset = 0;
+        blue_offset = 0;
+        color_step = 1;
+    } else {
+        rgb_msg = cv_bridge::toCvCopy(rgb_msg, enc::RGB8)->toImageMsg();
+
+        red_offset = 0;
+        green_offset = 1;
+        blue_offset = 2;
+        color_step = 3;
+    }
+
+    // Allocate new point cloud message
+    sensor_msgs::PointCloud2::Ptr cloud_msg(new sensor_msgs::PointCloud2);
+    cloud_msg->header = depth_msg->header; // Use depth image time stamp
+    cloud_msg->height = depth_msg->height;
+    cloud_msg->width = depth_msg->width;
+    cloud_msg->is_dense = false;
+    cloud_msg->is_bigendian = false;
+    sensor_msgs::PointCloud2Modifier pcd_modifier(*cloud_msg);
+    pcd_modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+
+    if (depth_msg->encoding == enc::TYPE_16UC1) {
+        AirsimROSWrapper::convert<uint16_t>(depth_msg, rgb_msg, cloud_msg, model_, red_offset, green_offset, blue_offset,
+                                            color_step);
+    } else if (depth_msg->encoding == enc::TYPE_32FC1) {
+        AirsimROSWrapper::convert<float>(depth_msg, rgb_msg, cloud_msg, model_, red_offset, green_offset, blue_offset,
+                                         color_step);
+    }
+
+    pc_publisher_.publish(cloud_msg);
 }
 
 // publish camera transforms
-// camera poses are obtained from airsim's client API which are in (local) NED frame. 
-// We first do a change of basis to camera optical frame (Z forward, X right, Y down) 
+// camera poses are obtained from airsim's client API which are in (local) NED frame.
+// We first do a change of basis to camera optical frame (Z forward, X right, Y down)
 void AirsimROSWrapper::publish_camera_tf(const ImageResponse &img_response, const ros::Time &ros_time,
                                          const std::string &frame_id, const std::string &child_frame_id) {
+
+
     geometry_msgs::TransformStamped cam_tf_body_msg;
     cam_tf_body_msg.header.stamp = ros_time;
     cam_tf_body_msg.header.frame_id = frame_id;
@@ -1564,5 +1652,63 @@ void AirsimROSWrapper::read_params_from_yaml_and_fill_cam_info_msg(const std::st
     cam_info.D.resize(D_rows * D_cols);
     for (int i = 0; i < D_rows * D_cols; ++i) {
         cam_info.D[i] = D_data[i].as<float>();
+    }
+}
+
+template<typename T>
+void AirsimROSWrapper::convert(const sensor_msgs::ImageConstPtr& depth_msg,
+                                      const sensor_msgs::ImageConstPtr& rgb_msg,
+                                      const sensor_msgs::PointCloud2::Ptr& cloud_msg,
+                                      const image_geometry::PinholeCameraModel& model_,
+                                      int red_offset, int green_offset, int blue_offset, int color_step)
+{
+    // Use correct principal point from calibration
+    float center_x = model_.cx();
+    float center_y = model_.cy();
+
+    // Combine unit conversion (if necessary) with scaling by focal length for computing (X,Y)
+    double unit_scaling = 1.0;
+    float constant_x = unit_scaling / model_.fx();
+    float constant_y = unit_scaling / model_.fy();
+    float bad_point = std::numeric_limits<float>::quiet_NaN ();
+
+    const T* depth_row = reinterpret_cast<const T*>(&depth_msg->data[0]);
+    int row_step = depth_msg->step / sizeof(T);
+    const uint8_t* rgb = &rgb_msg->data[0];
+    int rgb_skip = rgb_msg->step - rgb_msg->width * color_step;
+
+    sensor_msgs::PointCloud2Iterator<float> iter_x(*cloud_msg, "x");
+    sensor_msgs::PointCloud2Iterator<float> iter_y(*cloud_msg, "y");
+    sensor_msgs::PointCloud2Iterator<float> iter_z(*cloud_msg, "z");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_r(*cloud_msg, "r");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_g(*cloud_msg, "g");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_b(*cloud_msg, "b");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_a(*cloud_msg, "a");
+
+    for (int v = 0; v < int(cloud_msg->height); ++v, depth_row += row_step, rgb += rgb_skip)
+    {
+        for (int u = 0; u < int(cloud_msg->width); ++u, rgb += color_step, ++iter_x, ++iter_y, ++iter_z, ++iter_a, ++iter_r, ++iter_g, ++iter_b)
+        {
+            T depth = depth_row[u];
+
+            // Check for invalid measurements
+            if (!std::isfinite(depth) || depth == 0.0)
+            {
+                *iter_x = *iter_y = *iter_z = bad_point;
+            }
+            else
+            {
+                // Fill in XYZ
+                *iter_x = (u - center_x) * depth * constant_x;
+                *iter_y = (v - center_y) * depth * constant_y;
+                *iter_z = depth;
+            }
+
+            // Fill in color
+            *iter_a = 255;
+            *iter_r = rgb[red_offset];
+            *iter_g = rgb[green_offset];
+            *iter_b = rgb[blue_offset];
+        }
     }
 }

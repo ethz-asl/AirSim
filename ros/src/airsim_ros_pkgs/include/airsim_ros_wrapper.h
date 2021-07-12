@@ -62,6 +62,7 @@ STRICT_MODE_ON
 #include <tf2/convert.h>
 #include <unordered_map>
 #include <memory>
+#include <image_geometry/pinhole_camera_model.h>
 // #include "nodelet/nodelet.h"
 
 // todo move airlib typedefs to separate header file?
@@ -217,7 +218,7 @@ private:
 
     /// ROS timer callbacks
     void img_response_timer_cb(const ros::TimerEvent& event); // update images from airsim_client_ every nth sec
-    void drone_state_timer_cb(const ros::TimerEvent& event); // update drone state from airsim_client_ every nth sec
+    void drone_state_timer_cb(const ros::WallTimerEvent& event); // update drone state from airsim_client_ every nth sec
     void lidar_timer_cb(const ros::TimerEvent& event);
 
     /// ROS subscriber callbacks
@@ -263,7 +264,7 @@ private:
     sensor_msgs::ImagePtr get_img_msg_from_response(const ImageResponse& img_response, const ros::Time curr_ros_time, const std::string frame_id);
     sensor_msgs::ImagePtr get_depth_img_msg_from_response(const ImageResponse& img_response, const ros::Time curr_ros_time, const std::string frame_id);
     
-    void process_and_publish_img_response(const std::vector<ImageResponse>& img_response_vec, const int img_response_idx, const std::string& vehicle_name);
+    void process_and_publish_img_response(const ros::Time curr_ros_time, const std::vector<ImageResponse>& img_response_vec, const int img_response_idx, const std::string& vehicle_name);
 
     // methods which parse setting json ang generate ros pubsubsrv
     void create_ros_pubs_from_settings_json();
@@ -299,6 +300,17 @@ private:
     // simulation time utility
     ros::Time airsim_timestamp_to_ros(const msr::airlib::TTimePoint& stamp) const;
     ros::Time chrono_timestamp_to_ros(const std::chrono::system_clock::time_point& stamp) const;
+
+    void publish_images_as_pc(const sensor_msgs::ImagePtr& depth_msg,
+                                                const sensor_msgs::ImagePtr& rgb_msg_in,
+                                                const sensor_msgs::CameraInfoPtr& info_msg);
+
+    template<typename T>
+    void convert(const sensor_msgs::ImageConstPtr& depth_msg,
+                                   const sensor_msgs::ImageConstPtr& rgb_msg,
+                                   const sensor_msgs::PointCloud2::Ptr& cloud_msg,
+                                   const image_geometry::PinholeCameraModel& model_,
+                                   int red_offset, int green_offset, int blue_offset, int color_step);
 
 private:
     // subscriber / services for ALL robots
@@ -365,13 +377,15 @@ private:
 
     /// ROS Timers.
     ros::Timer airsim_img_response_timer_;
-    ros::Timer airsim_control_update_timer_;
+    ros::WallTimer airsim_control_update_timer_;
     ros::Timer airsim_lidar_update_timer_;
 
     typedef std::pair<std::vector<ImageRequest>, std::string> airsim_img_request_vehicle_name_pair;
     std::vector<airsim_img_request_vehicle_name_pair> airsim_img_request_vehicle_name_pair_vec_;
     std::vector<image_transport::Publisher> image_pub_vec_; 
     std::vector<ros::Publisher> cam_info_pub_vec_;
+
+    ros::Publisher pc_publisher_;
 
     std::vector<sensor_msgs::CameraInfo> camera_info_msg_vec_;
 

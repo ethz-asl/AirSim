@@ -268,7 +268,7 @@ void PIDPositionController::update_control_cmd_timer_cb(const ros::TimerEvent& e
     // if no odom, don't do anything. 
     if (!has_odom_)
     {
-        ROS_ERROR_STREAM("[PIDPositionController] Waiting for odometry!");
+//        ROS_ERROR_STREAM("[PIDPositionController] Waiting for odometry!");
         return;
     }
 
@@ -283,7 +283,7 @@ void PIDPositionController::update_control_cmd_timer_cb(const ros::TimerEvent& e
         }
         else
         {
-            ROS_INFO_STREAM("[PIDPositionController] Moving to goal.");
+//            ROS_INFO_STREAM("[PIDPositionController] Moving to goal.");
         }
     }
 
@@ -338,13 +338,17 @@ void PIDPositionController::enforce_dynamic_constraints()
         // template <typename T> double sgn(T val) { return (T(0) < val) - (val < T(0)); }
         vel_cmd_.twist.linear.z = (vel_cmd_.twist.linear.z / std::fabs(vel_cmd_.twist.linear.z)) * constraints_.max_vel_vert_abs; 
     }
-    // todo yaw limits
-    if (std::fabs(vel_cmd_.twist.linear.z) > constraints_.max_yaw_rate_degree)
-    {
-        // todo just add a sgn funciton in common utils? return double to be safe. 
-        // template <typename T> double sgn(T val) { return (T(0) < val) - (val < T(0)); }
-        vel_cmd_.twist.linear.z = (vel_cmd_.twist.linear.z / std::fabs(vel_cmd_.twist.linear.z)) * constraints_.max_yaw_rate_degree;
+
+    if(std::fabs(vel_cmd_.twist.angular.z) > constraints_.max_yaw_rate_degree) {
+        vel_cmd_.twist.angular.z = (vel_cmd_.twist.angular.z / std::fabs(vel_cmd_.twist.angular.z)) * constraints_.max_yaw_rate_degree;
     }
+//    // todo yaw limits
+//    if (std::fabs(vel_cmd_.twist.linear.z) > constraints_.max_yaw_rate_degree)
+//    {
+//        // todo just add a sgn funciton in common utils? return double to be safe.
+//        // template <typename T> double sgn(T val) { return (T(0) < val) - (val < T(0)); }
+//        vel_cmd_.twist.linear.z = (vel_cmd_.twist.linear.z / std::fabs(vel_cmd_.twist.linear.z)) * constraints_.max_yaw_rate_degree;
+//    }
 
 }
 
